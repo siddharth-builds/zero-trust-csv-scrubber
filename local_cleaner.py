@@ -52,28 +52,38 @@ def process_csv(input_filepath: str, output_filepath: str, deadletter_filepath: 
         {raw_json}
         """
 
+        # Initialize response to None to prevent 'unbound variable' errors in the except block
+        response = None 
+        
         try:
-            # Enforce structured output via Pydantic
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig( # type: ignore
                     response_mime_type="application/json",
                     response_schema=CRMLead,
-                    temperature=0.1 # Keep it deterministic
+                    temperature=0.1
                 )
             )
             
-            # Load the JSON string back into a Python dictionary, then validate with Pydantic
-            validated_lead = CRMLead.model_validate_json(response.text)
+            # Use 'or ""' to guarantee raw_text is always a string, fixing the NoneType error
+            raw_text = response.text or "" 
+            
+            # Clean rogue markdown
+            if raw_text.strip().startswith("```"):
+                raw_text = raw_text.strip("` \n").replace("json", "").strip()
+                
+            validated_lead = CRMLead.model_validate_json(raw_text)
             clean_leads.append(validated_lead.model_dump())
             print(f"Row {index + 1}: Success -> {validated_lead.email}")
 
         except Exception as e:
-            # If Pydantic fails validation (e.g., missing a primary key like email), route to dead letter
             print(f"Row {index + 1}: FAILED -> {e}")
+            # Safely extract debug text only if response was successfully created
+            debug_text = response.text if response and hasattr(response, 'text') else "No response generated. Possible network/API failure."
+            print(f"Debug Output: {debug_text}") 
             row_dict['error_reason'] = str(e)
             dead_letters.append(row_dict)
-
     # 4. Save Outputs
     if clean_leads:
         pl.DataFrame(clean_leads).write_csv(output_filepath)
