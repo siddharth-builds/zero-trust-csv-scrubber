@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agency Data Scrubber | Zero-Trust Audit</title>
+    <!-- Load PapaParse for client-side CSV processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f9fafb; color: #111827; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .container { max-width: 600px; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); text-align: center; }
+        #dropzone { border: 2px dashed #9ca3af; border-radius: 6px; padding: 3rem 1rem; margin: 1.5rem 0; cursor: pointer; transition: background-color 0.2s; }
+        #dropzone:hover, #dropzone.dragover { background-color: #f3f4f6; border-color: #3b82f6; }
+        .hidden { display: none; }
+        button { background-color: #2563eb; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 1rem; }
+        button:hover { background-color: #1d4ed8; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Zero-Trust Error Log Scrubber</h2>
+    <p>Drop your failed Make.com CSV here. We scramble the PII locally in your browser before you send it to us for the free audit.</p>
+    
+    <div id="dropzone">
+        <p>Drag & drop your CSV here, or click to select.</p>
+        <input type="file" id="fileInput" accept=".csv" class="hidden">
+    </div>
+
+    <div id="status" class="hidden">
+        <p><strong>Status:</strong> <span id="statusText">Processing...</span></p>
+        <button id="downloadBtn" class="hidden">Download Anonymized CSV</button>
+    </div>
+</div>
+
+<script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const statusDiv = document.getElementById('status');
+    const statusText = document.getElementById('statusText');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let processedCsvData = null;
+
+    // UI Event Listeners
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) handleFile(e.target.files[0]);
+    });
+
+    function handleFile(file) {
+        if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
+            alert("Please upload a valid CSV file.");
+            return;
+        }
+
+        statusDiv.classList.remove('hidden');
+        statusText.innerText = "Parsing and anonymizing data...";
+        downloadBtn.classList.add('hidden');
+
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                const data = results.data;
+                const fields = results.meta.fields;
+                
+                // Find likely email and phone columns
+                const emailCol = fields.find(f => f.toLowerCase().includes('email'));
+                const phoneCol = fields.find(f => f.toLowerCase().includes('phone'));
+
+                // Scramble the data
+                data.forEach(row => {
+                    if (emailCol && row[emailCol]) {
+                        const parts = row[emailCol].split('@');
+                        if (parts.length === 2) {
+                            // Hash the local part, keep the domain for the LLM inference
+                            row[emailCol] = 'x'.repeat(parts[0].length) + '@' + parts[1];
+                        }
+                    }
+                    if (phoneCol && row[phoneCol]) {
+                        row[phoneCol] = row[phoneCol].replace(/\d/g, 'x');
+                    }
+                });
+
+                // Convert back to CSV
+                processedCsvData = Papa.unparse(data);
+                
+                statusText.innerText = `Successfully anonymized ${data.length} rows.`;
+                downloadBtn.classList.remove('hidden');
+            },
+            error: function(err) {
+                statusText.innerText = "Error parsing CSV: " + err.message;
+            }
+        });
+    }
+
+    downloadBtn.addEventListener('click', () => {
+        const blob = new Blob([processedCsvData], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "anonymized_audit_data.csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+</script>
+
+</body>
+</html>
