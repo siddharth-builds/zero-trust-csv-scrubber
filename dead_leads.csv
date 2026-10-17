@@ -1,2 +1,0 @@
-FirstName,LastName,company_name,EmailAddress,Phone,Title,error_reason
-jane,doe,CafÃ© L'OrÃ©al,xxxx@loreal.fr,,Chief executive officer,"503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}"
