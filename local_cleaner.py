@@ -82,7 +82,6 @@ def process_csv(input_filepath: str, output_filepath: str, deadletter_filepath: 
             print(f"Debug Output: {debug_text}") 
             row_dict['error_reason'] = str(e)
             dead_letters.append(row_dict)
-
     # 4. Save Outputs
     if clean_leads:
         pl.DataFrame(clean_leads).write_csv(output_filepath)
