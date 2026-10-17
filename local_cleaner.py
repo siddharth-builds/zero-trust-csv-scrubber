@@ -1,18 +1,20 @@
 import os
 import json
 import polars as pl
-import google.generativeai as genai
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from typing import Optional
 from dotenv import load_dotenv
+
+# NEW: Import the modern GenAI SDK
+from google import genai
+from google.genai import types
 
 # Load the hidden .env file safely
 load_dotenv()
 
-# Configure Gemini using the protected variable
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-# We use Gemini 2.5 Flash for speed and cost-efficiency
-model = genai.GenerativeModel('gemini-2.5-flash')
+# 1. Setup Gemini Client 
+# The modern client automatically picks up the GEMINI_API_KEY from your environment
+client = genai.Client()
 
 # 2. Define the Strict CRM Target Schema (Pydantic)
 class CRMLead(BaseModel):
@@ -27,7 +29,6 @@ class CRMLead(BaseModel):
 def process_csv(input_filepath: str, output_filepath: str, deadletter_filepath: str):
     print(f"Loading {input_filepath} with Polars...")
     
-    # Ingest using Polars. Strictly cast everything to strings to prevent schema crashes on weird data.
     df = pl.read_csv(input_filepath, infer_schema_length=0)
     
     clean_leads = []
@@ -35,10 +36,7 @@ def process_csv(input_filepath: str, output_filepath: str, deadletter_filepath: 
 
     print(f"Processing {len(df)} rows through Gemini 2.5 Flash...")
 
-    # For the local MVP, we iterate synchronously. 
-    # (In the final GCP version, we use the Batch API for massive concurrency)
     for index, row_dict in enumerate(df.iter_rows(named=True)):
-        # Convert the raw row into a JSON string for the LLM prompt
         raw_json = json.dumps(row_dict)
         
         prompt = f"""
@@ -53,23 +51,22 @@ def process_csv(input_filepath: str, output_filepath: str, deadletter_filepath: 
         """
 
         try:
-            # Enforce structured output via Pydantic
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
+            # NEW: Use the modern client.models.generate_content API
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=CRMLead,
-                    temperature=0.1 # Keep it deterministic
+                    temperature=0.1
                 )
             )
             
-            # Load the JSON string back into a Python dictionary, then validate with Pydantic
             validated_lead = CRMLead.model_validate_json(response.text)
             clean_leads.append(validated_lead.model_dump())
             print(f"Row {index + 1}: Success -> {validated_lead.email}")
 
         except Exception as e:
-            # If Pydantic fails validation (e.g., missing a primary key like email), route to dead letter
             print(f"Row {index + 1}: FAILED -> {e}")
             row_dict['error_reason'] = str(e)
             dead_letters.append(row_dict)
@@ -84,7 +81,6 @@ def process_csv(input_filepath: str, output_filepath: str, deadletter_filepath: 
         print(f"⚠️ Saved {len(dead_letters)} unrecoverable leads to {deadletter_filepath}")
 
 if __name__ == "__main__":
-    # Point this to the file you download from the web dropzone
     INPUT_FILE = "anonymized_audit_data.csv"
     CLEAN_OUTPUT = "recovered_leads.csv"
     DEAD_OUTPUT = "dead_leads.csv"
