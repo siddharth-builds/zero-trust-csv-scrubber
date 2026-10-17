@@ -4,11 +4,13 @@ import polars as pl
 import google.generativeai as genai
 from pydantic import BaseModel, Field, ValidationError
 from typing import Optional
+from dotenv import load_dotenv
 
-# 1. Setup Gemini API
-# You must set your API key in your terminal before running: export GEMINI_API_KEY="your_key"
+# Load the hidden .env file safely
+load_dotenv()
+
+# Configure Gemini using the protected variable
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-
 # We use Gemini 2.5 Flash for speed and cost-efficiency
 model = genai.GenerativeModel('gemini-2.5-flash')
 
