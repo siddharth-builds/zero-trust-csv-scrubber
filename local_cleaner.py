@@ -55,7 +55,8 @@ async def process_single_row(index, row_dict, semaphore, clean_leads, dead_lette
                 raw_text = raw_text.strip("` \n").replace("json", "").strip()
                 
             validated_lead = CRMLead.model_validate_json(raw_text)
-            clean_leads.append(validated_lead.model_dump())
+            updated_row = {**row_dict, **validated_lead.model_dump()}
+            clean_leads.append(updated_row)
             print(f"Row {index + 1}: Success -> {validated_lead.email}")
 
         except Exception as e:
